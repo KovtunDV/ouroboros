@@ -118,11 +118,12 @@ from ouroboros.config import (
 _supervisor_ready = threading.Event()
 _supervisor_error: Optional[str] = None
 _event_loop: Optional[asyncio.AbstractEventLoop] = None
+_telegram_daemon: Optional[object] = None  # Global: Telegram daemon (threaded) for polling
 
 
 def _run_supervisor(settings: dict) -> None:
     """Initialize and run the supervisor loop. Called in a background thread."""
-    global _supervisor_error
+    global _supervisor_error, _telegram_daemon
 
     _apply_settings_to_env(settings)
 
@@ -148,6 +149,28 @@ def _run_supervisor(settings: dict) -> None:
         state_init(DATA_DIR, float(settings.get("TOTAL_BUDGET", 1000.0)))
         init_state()
 
+        
+        global _telegram_daemon
+        # Telegram daemon initialization
+        try:
+            state = load_state()
+            telegram_config = state.get("telegram", {})
+            if telegram_config.get("enabled", False):
+                bot_token = telegram_config.get("bot_token")
+                group_chat_id = telegram_config.get("group_chat_id")
+                if bot_token and group_chat_id:
+                    from supervisor.workers import get_event_q
+                    from supervisor.telegram_daemon import TelegramDaemon
+                    _telegram_daemon = TelegramDaemon(
+                        bot_token=bot_token,
+                        group_chat_id=group_chat_id,
+                        queue=get_event_q(),
+                        log_chat=bridge.push_log
+                    )
+                    _telegram_daemon.start()
+                    log.info("Telegram daemon started successfully")
+        except Exception as e:
+            log.error("Failed to start Telegram daemon: %s", e, exc_info=True)
         from supervisor.git_ops import init as git_ops_init, ensure_repo_present, safe_restart
         git_ops_init(
             repo_dir=REPO_DIR, drive_root=DATA_DIR, remote_url="",
@@ -933,6 +956,12 @@ async def lifespan(app):
         kill_workers(force=True)
     except Exception:
         pass
+    try:
+        if _telegram_daemon is not None:
+            _telegram_daemon.stop()
+            log.info("Telegram daemon stopped")
+    except Exception:
+        pass
 
 
 app = Starlette(routes=routes, lifespan=lifespan)
@@ -1004,6 +1033,12 @@ if __name__ == "__main__":
         try:
             from supervisor.workers import kill_workers
             kill_workers(force=True)
+        except Exception:
+            pass
+        try:
+            if _telegram_daemon is not None:
+                _telegram_daemon.stop()
+                log.info("Telegram daemon stopped")
         except Exception:
             pass
         import multiprocessing, signal
