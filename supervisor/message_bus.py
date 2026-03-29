@@ -10,7 +10,7 @@ import datetime
 import logging
 import queue
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from supervisor.state import load_state, save_state, append_jsonl
 
@@ -24,6 +24,8 @@ DATA_DIR = None  # pathlib.Path
 TOTAL_BUDGET_LIMIT: float = 0.0
 BUDGET_REPORT_EVERY_MESSAGES: int = 10
 _BRIDGE: Optional["LocalChatBridge"] = None
+_TELEGRAM_BRIDGE: Optional[Any] = None  # Will hold TelegramBridge instance
+_TELEGRAM_GROUP_CHAT_ID: Optional[int] = None
 
 
 def init(drive_root, total_budget_limit: float, budget_report_every: int,
@@ -38,6 +40,24 @@ def init(drive_root, total_budget_limit: float, budget_report_every: int,
 def get_bridge() -> "LocalChatBridge":
     assert _BRIDGE is not None, "message_bus.init() not called"
     return _BRIDGE
+
+
+def register_telegram_bridge(telegram_bridge, group_chat_id: int) -> None:
+    """Register TelegramBridge instance for sending responses.
+    
+    When send_with_budget detects the chat_id matches group_chat_id,
+    responses are sent via TelegramBridge instead of LocalChatBridge.
+    """
+    global _TELEGRAM_BRIDGE, _TELEGRAM_GROUP_CHAT_ID
+    _TELEGRAM_BRIDGE = telegram_bridge
+    _TELEGRAM_GROUP_CHAT_ID = group_chat_id
+
+
+def _use_telegram_bridge(chat_id: int) -> bool:
+    """Check if message should be sent via TelegramBridge."""
+    if _TELEGRAM_BRIDGE is None or _TELEGRAM_GROUP_CHAT_ID is None:
+        return False
+    return int(chat_id) == int(_TELEGRAM_GROUP_CHAT_ID)
 
 
 # ---------------------------------------------------------------------------
@@ -179,16 +199,28 @@ def _strip_markdown(text: str) -> str:
 
 
 def _send_markdown(chat_id: int, text: str) -> Tuple[bool, str]:
-    """Send markdown text to the UI."""
-    bridge = get_bridge()
-    if not text:
-        return False, "empty"
-    return bridge.send_message(chat_id, text, parse_mode="markdown")
+    """Send markdown text to the appropriate bridge."""
+    if _use_telegram_bridge(chat_id):
+        # Send via TelegramBridge (it supports Markdown parse_mode)
+        return _send_markdown_telegram(chat_id, text)
+    else:
+        # Send via LocalChatBridge (Web UI)
+        bridge = get_bridge()
+        if not text:
+            return False, "empty"
+        return bridge.send_message(chat_id, text, parse_mode="markdown")
 
 
-# ---------------------------------------------------------------------------
-# Budget + logging
-# ---------------------------------------------------------------------------
+def _send_markdown_telegram(chat_id: int, text: str) -> Tuple[bool, str]:
+    """Send markdown text via TelegramBridge."""
+    ok = _TELEGRAM_BRIDGE.send_message(text, parse_mode="Markdown")
+    return ok, "ok" if ok else "failed"
+
+
+def _send_text_telegram(chat_id: int, text: str) -> None:
+    """Send plain text via TelegramBridge."""
+    _TELEGRAM_BRIDGE.send_message(text)
+
 
 def _format_budget_line(st: Dict[str, Any]) -> str:
     spent = float(st.get("spent_rub") or st.get("spent_usd") or 0.0)
@@ -261,6 +293,12 @@ def send_with_budget(chat_id: int, text: str, log_text: Optional[str] = None,
         ok, err = _send_markdown(chat_id, full)
         return
 
-    bridge = get_bridge()
-    for part in split_message(full):
-        bridge.send_message(chat_id, part)
+    if _use_telegram_bridge(chat_id):
+        # Send via TelegramBridge
+        for part in split_message(full):
+            _send_text_telegram(chat_id, part)
+    else:
+        # Send via LocalChatBridge (Web UI)
+        bridge = get_bridge()
+        for part in split_message(full):
+            bridge.send_message(chat_id, part)
