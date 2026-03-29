@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+*.so
+*.dylib
+*.dll
+*.dist-info/
+base_library.zip
+.DS_Store
