@@ -1,0 +1,17 @@
+{
+  "//": "Example settings for Cloud.ru Foundation Models. Copy to ~/Ouroboros/data/settings.json and edit.",
+  "API_KEY": "your-cloud-ru-key-secret-here",
+  "OPENAI_API_KEY": "",
+  "ANTHROPIC_API_KEY": "",
+
+  "OUROBOROS_MODEL": "zai-org/GLM-4.7",
+  "OUROBOROS_MODEL_CODE": "zai-org/GLM-4.7",
+  "OUROBOROS_MODEL_LIGHT": "zai-org/GLM-4.7",
+  "OUROBOROS_MODEL_FALLBACK": "zai-org/GLM-4.7",
+
+  "TOTAL_BUDGET": 1000.0,
+  "OUROBOROS_MAX_WORKERS": 5,
+  "OUROBOROS_SOFT_TIMEOUT_SEC": 600,
+  "OUROBOROS_HARD_TIMEOUT_SEC": 1800
+}
+
