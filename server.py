@@ -160,15 +160,11 @@ def _run_supervisor(settings: dict) -> None:
                 group_chat_id = telegram_config.get("group_chat_id")
                 if bot_token and group_chat_id:
                     from supervisor.workers import get_event_q
-                    from supervisor.telegram_daemon import TelegramDaemon
-                    _telegram_daemon = TelegramDaemon(
-                        bot_token=bot_token,
-                        group_chat_id=group_chat_id,
-                        queue=get_event_q(),
-                        log_chat=bridge.push_log
-                    )
-                    _telegram_daemon.start()
+                    from supervisor.telegram_bridge import TelegramBridge
                     log.info("Telegram daemon started successfully")
+                    _telegram_daemon = TelegramBridge(bot_token=bot_token, group_chat_id=group_chat_id)
+                    _telegram_daemon.start_polling()
+
         except Exception as e:
             log.error("Failed to start Telegram daemon: %s", e, exc_info=True)
         from supervisor.git_ops import init as git_ops_init, ensure_repo_present, safe_restart
@@ -958,7 +954,7 @@ async def lifespan(app):
         pass
     try:
         if _telegram_daemon is not None:
-            _telegram_daemon.stop()
+            _telegram_daemon.stop_polling()
             log.info("Telegram daemon stopped")
     except Exception:
         pass
@@ -1037,7 +1033,7 @@ if __name__ == "__main__":
             pass
         try:
             if _telegram_daemon is not None:
-                _telegram_daemon.stop()
+                _telegram_daemon.stop_polling()
                 log.info("Telegram daemon stopped")
         except Exception:
             pass
