@@ -15,6 +15,7 @@ if repo_dir not in sys.path:
     sys.path.insert(0, repo_dir)
 
 from supervisor.telegram_bridge import TelegramBridge
+from supervisor.telegram_dispatcher import TelegramDispatcher
 
 log = logging.getLogger(__name__)
 
@@ -42,8 +43,14 @@ def main():
         long_poll_timeout=25
     )
     
+    # Create dispatcher
+    dispatcher = TelegramDispatcher(bridge=bridge, poll_interval=0.5)
+    
     # Start polling
     bridge.start_polling()
+    
+    # Start dispatcher
+    dispatcher.start()
     
     log.info(f"Telegram worker listening to group: {group_chat_id}")
     
@@ -55,6 +62,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        dispatcher.stop()
         bridge.stop_polling()
         bridge.close()
         log.info("Telegram worker stopped")
